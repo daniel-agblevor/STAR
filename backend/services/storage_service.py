@@ -1,86 +1,84 @@
 import os
-import shutil
-from flask import abort
+import uuid
 from supabase import create_client, Client
-from datetime import datetime
-import mimetypes
 from decouple import config
+from extensions import db
+from models import File
+from services.text_extraction import extract_text_from_file
 
-# Initialize Supabase
+# Init Supabase (Storage Only)
 url: str = config("SUPABASE_URL")
 key: str = config("SUPABASE_KEY")
-
-if not url or not key:
-    raise ValueError("Supabase credentials missing in .env")
-
 supabase: Client = create_client(url, key)
 
 BUCKET_NAME = "documents"
 
-def upload_file_to_storage(file):
+def upload_file_to_storage(file_obj, user_id):
     """
-    Uploads a file to Supabase Storage and records it in the 'files' table.
-    Returns the file_record and file_content (text) for further processing.
+    1. Uploads file to Supabase Storage (S3).
+    2. Extracts text.
+    3. Saves metadata + content to SQL Database.
     """
+    filename = f"{uuid.uuid4()}_{file_obj.filename}"
+    file_content = file_obj.read()
+    
+    # 1. Upload to Storage
     try:
-        # 1. Read file content
-        content = file.read() # Flask/Werkzeug read is sync
-        file_size = len(content)
-        
-        # 2. Upload to Supabase Storage
-        # We use a timestamp prefix to avoid name collisions
-        timestamp = int(datetime.utcnow().timestamp())
-        file_path = f"{timestamp}_{file.filename}"
-        
-        # Reset pointer for upload if needed, though usually fine.
-        # file.seek(0) 
-        
-        res = supabase.storage.from_(BUCKET_NAME).upload(
-            path=file_path,
-            file=content,
-            file_options={"content-type": file.mimetype}
+        supabase.storage.from_(BUCKET_NAME).upload(
+            path=filename,
+            file=file_content,
+            file_options={"content-type": file_obj.content_type}
         )
-        
-        # 3. Create DB Record
-        file_data = {
-            "name": file.filename,
-            "storage_path": file_path,
-            "size": file_size,
-            "type": file.mimetype or "application/octet-stream"
-        }
-        
-        db_res = supabase.table("files").insert(file_data).execute()
-        
-        if not db_res.data:
-            abort(500, description="Failed to insert file record to DB")
-            
-        file_record = db_res.data[0]
-        
-        return file_record, content
-
     except Exception as e:
-        print(f"Error in upload_file: {e}")
-        # If it's already an abort, re-raise, else 500
+        print(f"Storage Upload Error: {e}")
         raise e
 
-def get_all_files():
-    """Fetch all files from the DB."""
-    res = supabase.table("files").select("*").order("created_at", desc=True).execute()
-    return res.data
+    # 2. Extract Text
+    text_content = extract_text_from_file(file_obj.filename, file_content)
+
+    # 3. Save to DB
+    new_file = File(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        name=file_obj.filename,
+        storage_path=filename,
+        content=text_content,
+        size=len(file_content),
+        type=file_obj.content_type
+    )
+    
+    db.session.add(new_file)
+    db.session.commit()
+    
+    return {"message": "Uploaded successfully", "file_id": new_file.id}
+
+def get_all_files(user_id):
+    """Fetches files for a user from SQL DB."""
+    if not user_id:
+        return []
+        
+    files = File.query.filter_by(user_id=user_id).order_by(File.created_at.desc()).all()
+    return [{
+        "id": f.id,
+        "name": f.name,
+        "created_at": f.created_at.isoformat()
+    } for f in files]
 
 def delete_file(file_id: str):
     """Delete file from DB and Storage."""
-    # 1. Get file path
-    res = supabase.table("files").select("storage_path").eq("id", file_id).execute()
-    if not res.data:
-        abort(404, description="File not found")
+    file = File.query.get(file_id)
+    if not file:
+        return {"error": "File not found"}
         
-    path = res.data[0]['storage_path']
-    
-    # 2. Delete from Storage
-    supabase.storage.from_(BUCKET_NAME).remove([path])
-    
-    # 3. Delete from DB (Cascade will remove chunks/quizzes)
-    supabase.table("files").delete().eq("id", file_id).execute()
+    # Delete from Storage
+    try:
+        supabase.storage.from_(BUCKET_NAME).remove([file.storage_path])
+    except Exception as e:
+        print(f"Storage Deletion Error: {e}")
+        # Continue to delete from DB anyway
+
+    # Delete from DB
+    db.session.delete(file)
+    db.session.commit()
     
     return {"message": "File deleted successfully"}

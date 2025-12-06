@@ -1,0 +1,45 @@
+-- Custom Authentication Migration
+
+-- 1. Create a public Users table
+CREATE TABLE IF NOT EXISTS public.users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL, 
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now())
+);
+
+-- 2. Modify files table to reference public.users instead of auth.users
+-- First, drop the old constraint if it exists
+DO $$ 
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'files_user_id_fkey') THEN
+        ALTER TABLE files DROP CONSTRAINT files_user_id_fkey;
+    END IF;
+END $$;
+
+-- Add new constraint
+ALTER TABLE files 
+ADD CONSTRAINT files_user_id_fkey 
+FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+-- 3. Update RLS Policy
+-- Since we are now handling Auth manually in the API (and passing user_id explicitly or via JWT claim in a custom way),
+-- Standard Supabase RLS using auth.uid() won't work automatically unless we set a config variable.
+-- For this Custom Auth implementation, we will likely bypass RLS using the Service Role Key in the backend 
+-- OR we can set a session variable. 
+-- For simplicity in a Flask + Custom Auth setup, we often let the Backend handle the authorization logic 
+-- and use the Service Key to access the DB, bypassing RLS. 
+-- However, to keep RLS as a safety net, we can use a custom function or just rely on backend filter.
+-- Let's keep RLS enabled but allow the Service Role (which the backend uses) full access.
+
+DROP POLICY IF EXISTS "Users can only access their own files" ON files;
+
+CREATE POLICY "Backend Service Full Access"
+ON files
+FOR ALL
+TO service_role
+USING (true)
+WITH CHECK (true);
+
+-- NOTE: If we want RLS to work with our custom JWT, we'd need to set `request.jwt.claim.sub` etc.
+-- For now, relying on the Backend Application Logic is the standard way when rolling your own Auth on top of a DB.

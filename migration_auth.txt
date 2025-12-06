@@ -1,0 +1,18 @@
+-- SQL Migration for User Authentication
+
+-- 1. Add user_id column to files table
+-- We link it to the built-in auth.users table in Supabase
+ALTER TABLE files 
+ADD COLUMN user_id UUID REFERENCES auth.users(id);
+
+-- 2. Enable Row Level Security (RLS)
+ALTER TABLE files ENABLE ROW LEVEL SECURITY;
+
+-- 3. Create Policy: Users can only see/edit their own files
+-- This ensures that if someone queries via the Supabase Client (Frontend), they only see their stuff.
+CREATE POLICY "Users can only access their own files"
+ON files
+FOR ALL
+USING (auth.uid() = user_id);
+
+-- Run this in the Supabase SQL Editor!
