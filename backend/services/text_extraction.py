@@ -1,5 +1,5 @@
 import io
-from pypdf import PdfReader
+from PyPDF2 import PdfReader
 from docx import Document
 
 def extract_text_from_file(file_content: bytes, file_type: str) -> str:

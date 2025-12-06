@@ -1,6 +1,6 @@
 import os
 import shutil
-from fastapi import UploadFile, HTTPException
+from flask import abort
 from supabase import create_client, Client
 from datetime import datetime
 import mimetypes
@@ -17,14 +17,14 @@ supabase: Client = create_client(url, key)
 
 BUCKET_NAME = "documents"
 
-async def upload_file_to_storage(file: UploadFile):
+def upload_file_to_storage(file):
     """
     Uploads a file to Supabase Storage and records it in the 'files' table.
-    Returns the file_id and file_content (text) for further processing.
+    Returns the file_record and file_content (text) for further processing.
     """
     try:
         # 1. Read file content
-        content = await file.read()
+        content = file.read() # Flask/Werkzeug read is sync
         file_size = len(content)
         
         # 2. Upload to Supabase Storage
@@ -32,10 +32,13 @@ async def upload_file_to_storage(file: UploadFile):
         timestamp = int(datetime.utcnow().timestamp())
         file_path = f"{timestamp}_{file.filename}"
         
+        # Reset pointer for upload if needed, though usually fine.
+        # file.seek(0) 
+        
         res = supabase.storage.from_(BUCKET_NAME).upload(
             path=file_path,
             file=content,
-            file_options={"content-type": file.content_type}
+            file_options={"content-type": file.mimetype}
         )
         
         # 3. Create DB Record
@@ -43,13 +46,13 @@ async def upload_file_to_storage(file: UploadFile):
             "name": file.filename,
             "storage_path": file_path,
             "size": file_size,
-            "type": file.content_type or "application/octet-stream"
+            "type": file.mimetype or "application/octet-stream"
         }
         
         db_res = supabase.table("files").insert(file_data).execute()
         
         if not db_res.data:
-            raise HTTPException(status_code=500, detail="Failed to insert file record to DB")
+            abort(500, description="Failed to insert file record to DB")
             
         file_record = db_res.data[0]
         
@@ -57,7 +60,8 @@ async def upload_file_to_storage(file: UploadFile):
 
     except Exception as e:
         print(f"Error in upload_file: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # If it's already an abort, re-raise, else 500
+        raise e
 
 def get_all_files():
     """Fetch all files from the DB."""
@@ -69,7 +73,7 @@ def delete_file(file_id: str):
     # 1. Get file path
     res = supabase.table("files").select("storage_path").eq("id", file_id).execute()
     if not res.data:
-        raise HTTPException(status_code=404, detail="File not found")
+        abort(404, description="File not found")
         
     path = res.data[0]['storage_path']
     

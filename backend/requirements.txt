@@ -1,6 +1,7 @@
-fastapi
-uvicorn
+flask
+flask-cors
 supabase
 google-generativeai
-python-multipart
 python-decouple
+PyPDF2
+python-docx
