@@ -183,7 +183,8 @@ async function uploadFile(file) {
         if (res.ok) {
             await loadFiles();
         } else {
-            alert("Upload failed");
+            const data = await res.json();
+            alert("Upload failed: " + (data.error || res.statusText));
         }
     } catch (err) {
         console.error(err);

@@ -18,7 +18,7 @@ from services.text_extraction import extract_text_from_file
 app = Flask(__name__)
 
 # Config
-app.config['SQLALCHEMY_DATABASE_URI'] = config('DB_CONNECTION_STRING')
+app.config['SQLALCHEMY_DATABASE_URI'] = config('DB_CONNECTION_STRING', default=config('DATABASE_URL'))
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = config('SECRET_KEY', default='supersecretkey')
 
@@ -107,48 +107,39 @@ def login():
 
 
 @app.route("/api/upload", methods=["POST"])
-def upload_file_endpoint():
+@token_required
+def upload_file_endpoint(current_user):
     if 'file' not in request.files:
         return jsonify({"error": "No file part"}), 400
     
     file = request.files['file']
-    user_id = request.form.get('user_id') # Form data for file uploads
+    user_id = current_user.id
 
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
 
-    if not user_id:
-        return jsonify({"error": "User ID required for upload"}), 401
-
     try:
-        # 1. Upload to Supabase & DB (Sync now)
-        file_record, file_content_bytes = upload_file_to_storage(file, user_id)
+        # 1. Upload to Supabase & DB & Extract Text (All in Service)
+        result = upload_file_to_storage(file, user_id)
         
-        # 2. Extract Text
-        text_content = extract_text_from_file(file_content_bytes, file.mimetype)
-        
-        if not text_content.strip():
-            return jsonify({"message": "File uploaded, but no text detected for AI context.", "file": file_record})
-
-        # 3. Process RAG in background
-        thread = threading.Thread(target=save_file_content, args=(file_record['id'], text_content))
-        thread.start()
-        
-        return jsonify({"message": "File uploaded and processing for AI started.", "file": file_record})
+        return jsonify(result)
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/files", methods=["GET"])
-def list_files_endpoint():
-    user_id = request.args.get('user_id')
+@token_required
+def list_files_endpoint(current_user):
+    user_id = current_user.id
     return jsonify(get_all_files(user_id))
 
 @app.route("/api/files/<file_id>", methods=["DELETE"])
-def delete_file_endpoint(file_id):
+@token_required
+def delete_file_endpoint(current_user, file_id):
     try:
-        # Note: We should probably verify user_id here too in a real app, 
-        # but RLS handles the DB part. Storage deletion needs care.
+        # TODO: Check if file belongs to current_user
         return jsonify(delete_file(file_id))
     except Exception as e:
         return jsonify({"error": str(e)}), 404

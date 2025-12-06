@@ -7,7 +7,7 @@ def init_db():
     app = Flask(__name__)
     
     # Load Config
-    app.config['SQLALCHEMY_DATABASE_URI'] = config('DB_CONNECTION_STRING', default='sqlite:///local.db') 
+    app.config['SQLALCHEMY_DATABASE_URI'] = config('DB_CONNECTION_STRING', default=config('DATABASE_URL')) 
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     db.init_app(app)

@@ -1,12 +1,11 @@
 from datetime import datetime
-from .extensions import db
+from extensions import db
 
 class User(db.Model):
     __tablename__ = 'users'
 
-    id = db.Column(db.Integer, primary_key=True) # Or UUID but IntegrityError is annoying with UUIDs if not handled well. Let's stick to UUID for "Production" if user requested, but standard Serial ID is easier for MVP. User asked for PRODUCTION. UUID is better.
-    # Note: Using UUID requires a bit more setup in SQLAlchemy often.
-    # Let's use String(36) for UUID to keep it simple and compatible.
+    # id = db.Column(db.Integer, primary_key=True) <--- Removing this conflict
+    # Using String(36) for UUID to keep it simple and compatible.
     id = db.Column(db.String(36), primary_key=True) 
     email = db.Column(db.String(120), unique=True, nullable=False)
     name = db.Column(db.String(100), nullable=True) # User's display name

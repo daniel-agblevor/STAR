@@ -34,7 +34,12 @@ def upload_file_to_storage(file_obj, user_id):
         raise e
 
     # 2. Extract Text
-    text_content = extract_text_from_file(file_obj.filename, file_content)
+    text_content = extract_text_from_file(file_content, file_obj.content_type)
+    if text_content:
+        # Remove null bytes
+        text_content = text_content.replace('\x00', '')
+        # Remove surrogate characters which Postgres rejects
+        text_content = text_content.encode('utf-8', 'ignore').decode('utf-8')
 
     # 3. Save to DB
     new_file = File(
