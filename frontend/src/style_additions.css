@@ -1,0 +1,198 @@
+/* ... Previous Styles ... */
+
+/* Forms & Inputs */
+.card-glass {
+    background: var(--card-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    padding: 2rem;
+    border-radius: 1.5rem;
+    max-width: 500px;
+    margin: 0 auto;
+    box-shadow: var(--shadow-sm);
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.glass-input {
+    width: 100%;
+    padding: 0.8rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--glass-border);
+    background: rgba(255, 255, 255, 0.3);
+    color: var(--text-primary);
+    font-family: inherit;
+    outline: none;
+}
+
+.glass-input:focus {
+    background: rgba(255, 255, 255, 0.6);
+    border-color: var(--primary-color);
+}
+
+.full-width {
+    width: 100%;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Quiz Styles */
+.quiz-game-container {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.quiz-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+    color: var(--text-secondary);
+}
+
+.question-card {
+    background: var(--card-bg);
+    padding: 2rem;
+    border-radius: 1rem;
+    border: 1px solid var(--glass-border);
+    margin-bottom: 2rem;
+}
+
+.question-card h2 {
+    margin-bottom: 2rem;
+    font-weight: 600;
+}
+
+.options-grid {
+    display: grid;
+    gap: 1rem;
+}
+
+.quiz-option {
+    padding: 1rem;
+    border: 1px solid var(--glass-border);
+    border-radius: 0.5rem;
+    background: rgba(255, 255, 255, 0.2);
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+}
+
+.quiz-option:hover {
+    background: rgba(255, 255, 255, 0.4);
+    border-color: var(--primary-color);
+}
+
+.quiz-option.selected {
+    background: var(--primary-color);
+    color: white;
+}
+
+.quiz-option.correct {
+    background: #10b981;
+    /* Green */
+    color: white;
+    border-color: #059669;
+}
+
+.quiz-option.wrong {
+    background: #ef4444;
+    /* Red */
+    color: white;
+    border-color: #dc2626;
+}
+
+/* Flashcard 3D Flip */
+.flashcard-scene {
+    perspective: 1000px;
+    width: 100%;
+    max-width: 500px;
+    height: 300px;
+    margin: 2rem auto;
+}
+
+.flashcard {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    transition: transform 0.6s;
+    transform-style: preserve-3d;
+    cursor: pointer;
+}
+
+.flashcard.is-flipped {
+    transform: rotateY(180deg);
+}
+
+.card-face {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    border-radius: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 2rem;
+    text-align: center;
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    font-size: 1.5rem;
+}
+
+.card-front {
+    background: var(--card-bg);
+    backdrop-filter: blur(10px);
+}
+
+.card-back {
+    background: var(--primary-color);
+    color: white;
+    transform: rotateY(180deg);
+}
+
+.hint {
+    font-size: 0.875rem;
+    opacity: 0.6;
+    margin-top: 1rem;
+}
+
+.flash-controls {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    margin-top: 2rem;
+}
+
+.btn-circle {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    border: none;
+    background: var(--card-bg);
+    color: var(--primary-color);
+    border: 1px solid var(--glass-border);
+    font-size: 1.5rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.btn-circle:hover {
+    background: var(--primary-color);
+    color: white;
+    transform: scale(1.1);
+}
