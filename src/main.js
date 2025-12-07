@@ -1,4 +1,19 @@
-const API_URL = 'http://10.167.58.222:8000';
+// Environment-aware API URL configuration
+const API_URL = (() => {
+    // Check for explicit override (for development with custom backend)
+    if (window.VITE_API_URL) return window.VITE_API_URL;
+
+    // Production: use same origin (assumes frontend and backend on same domain)
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        return window.location.origin;
+    }
+
+    // Development: default to localhost:8000
+    return 'http://127.0.0.1:8000';
+})();
+
+console.log('API URL:', API_URL);
+
 
 // State
 const state = {
@@ -46,9 +61,39 @@ const dom = {
     statFiles: document.getElementById("stat-files-count")
 };
 
+// --- Global Fetch Wrapper for Token Expiration ---
+const originalFetch = window.fetch;
+window.fetch = async function (...args) {
+    const response = await originalFetch(...args);
+
+    // Check for 401 Unauthorized (token expired or invalid)
+    if (response.status === 401 && state.token) {
+        // Check if this is an auth endpoint (login/register) - don't logout for those
+        const url = args[0];
+        const isAuthEndpoint = url.includes('/api/login') || url.includes('/api/register');
+
+        if (!isAuthEndpoint) {
+            console.warn('Token expired or invalid. Logging out...');
+            alert('Your session has expired. Please login again.');
+            logout();
+        }
+    }
+
+    return response;
+};
+
 // --- Auth Functions ---
 async function login(email, password) {
+    const loginBtn = document.querySelector('#login-form button[type="submit"]');
+    const originalText = loginBtn?.innerHTML;
+
     try {
+        // Show loading state
+        if (loginBtn) {
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> Signing in...';
+        }
+
         const res = await fetch(`${API_URL}/api/login`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -72,15 +117,30 @@ async function login(email, password) {
 
     } catch (err) {
         alert(err.message);
+    } finally {
+        // Restore button state
+        if (loginBtn) {
+            loginBtn.disabled = false;
+            loginBtn.innerHTML = originalText;
+        }
     }
 }
 
-async function register(email, password) {
+async function register(email, password, name) {
+    const registerBtn = document.querySelector('#register-form button[type="submit"]');
+    const originalText = registerBtn?.innerHTML;
+
     try {
+        // Show loading state
+        if (registerBtn) {
+            registerBtn.disabled = true;
+            registerBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> Creating account...';
+        }
+
         const res = await fetch(`${API_URL}/api/register`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, password })
+            body: JSON.stringify({ email, password, name })
         });
 
         const data = await res.json();
@@ -92,6 +152,12 @@ async function register(email, password) {
 
     } catch (err) {
         alert(err.message);
+    } finally {
+        // Restore button state
+        if (registerBtn) {
+            registerBtn.disabled = false;
+            registerBtn.innerHTML = originalText;
+        }
     }
 }
 
@@ -550,14 +616,14 @@ async function loadChatHistory() {
 
         if (res.ok) {
             const data = await res.json();
-            // Clear existing messages except the initial bot message
-            const initialMsg = dom.chatMessages.querySelector('.message.bot');
+            // Clear existing messages except the initial AI message
+            const initialMsg = dom.chatMessages.querySelector('.message.ai');
             dom.chatMessages.innerHTML = '';
             if (initialMsg) dom.chatMessages.appendChild(initialMsg);
 
-            // Add history messages
+            // Add history messages (use 'ai' instead of 'bot' to match CSS classes)
             data.messages.forEach(msg => {
-                addMessage(msg.content, msg.role === 'user' ? 'user' : 'bot');
+                addMessage(msg.content, msg.role === 'user' ? 'user' : 'ai');
             });
         }
     } catch (err) {
@@ -566,11 +632,26 @@ async function loadChatHistory() {
 }
 
 // --- Quiz & Flashcard Generation ---
+let quizState = {
+    questions: [],
+    currentIndex: 0,
+    score: 0,
+    selectedAnswer: null
+};
+
 async function generateQuiz(fileId) {
     if (!state.token) return openAuthModal();
 
     try {
         const count = 5;
+
+        // Show loading state
+        const btn = event?.target;
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="ph ph-spinner"></i> Generating...';
+        }
+
         const res = await fetch(`${API_URL}/api/quiz`, {
             method: "POST",
             headers: {
@@ -586,22 +667,195 @@ async function generateQuiz(fileId) {
             return;
         }
 
-        const questions = await res.json();
-        console.log("Quiz generated:", questions);
-        alert(`Quiz generated with ${questions.length} questions!`);
-        // TODO: Display quiz UI
+        const data = await res.json();
+
+        // Check for truncation warning
+        if (data.truncated) {
+            const percentUsed = ((data.used_chars / data.total_chars) * 100).toFixed(0);
+            alert(
+                `⚠️ Content Truncation Notice\n\n` +
+                `Your document has ${data.total_chars.toLocaleString()} characters, but only the first ${data.used_chars.toLocaleString()} characters (${percentUsed}%) were used to generate this quiz.\n\n` +
+                `For better coverage, consider splitting large documents into smaller sections.`
+            );
+        }
+
+        // Initialize quiz state with questions array
+        quizState = {
+            questions: data.questions || data,  // Support both old and new format
+            currentIndex: 0,
+            score: 0,
+            selectedAnswer: null
+        };
+
+        // Navigate to quiz view and start quiz
+        navigateTo('quiz');
+        startQuizUI();
 
     } catch (err) {
         console.error(err);
         alert("Error generating quiz");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="ph ph-exam"></i>';
+        }
     }
 }
+
+function startQuizUI() {
+    const configContainer = document.getElementById('quiz-config');
+    const gameContainer = document.getElementById('quiz-game');
+
+    if (configContainer) configContainer.classList.add('hidden');
+    if (gameContainer) {
+        gameContainer.classList.remove('hidden');
+        displayQuizQuestion();
+
+        // Add event listeners for quiz controls
+        const quitBtn = document.getElementById('btn-quit-quiz');
+        const nextBtn = document.getElementById('btn-next-question');
+
+        if (quitBtn) {
+            quitBtn.onclick = quitQuiz;
+        }
+        if (nextBtn) {
+            nextBtn.onclick = nextQuestion;
+        }
+    }
+}
+
+function displayQuizQuestion() {
+    const question = quizState.questions[quizState.currentIndex];
+    const progressEl = document.getElementById('quiz-progress');
+    const questionEl = document.getElementById('quiz-question-text');
+    const optionsEl = document.getElementById('quiz-options');
+    const resultArea = document.getElementById('quiz-result-area');
+
+    if (!question) return;
+
+    // Update progress
+    if (progressEl) {
+        progressEl.textContent = `Question ${quizState.currentIndex + 1}/${quizState.questions.length}`;
+    }
+
+    // Update question text
+    if (questionEl) {
+        questionEl.textContent = question.question;
+    }
+
+    // Clear and populate options
+    if (optionsEl) {
+        optionsEl.innerHTML = '';
+        question.options.forEach((option, index) => {
+            const btn = document.createElement('button');
+            btn.className = 'option-btn';
+            btn.textContent = option;
+            btn.onclick = () => selectQuizAnswer(option, question.correct_answer);
+            optionsEl.appendChild(btn);
+        });
+    }
+
+    // Hide result area
+    if (resultArea) {
+        resultArea.classList.add('hidden');
+    }
+
+    quizState.selectedAnswer = null;
+}
+
+function selectQuizAnswer(selected, correct) {
+    if (quizState.selectedAnswer) return; // Already answered
+
+    quizState.selectedAnswer = selected;
+    const isCorrect = selected === correct;
+
+    if (isCorrect) {
+        quizState.score++;
+    }
+
+    // Highlight selected answer
+    const optionsEl = document.getElementById('quiz-options');
+    const buttons = optionsEl.querySelectorAll('.option-btn');
+    buttons.forEach(btn => {
+        btn.disabled = true;
+        if (btn.textContent === correct) {
+            btn.classList.add('correct');
+        } else if (btn.textContent === selected && !isCorrect) {
+            btn.classList.add('incorrect');
+        }
+    });
+
+    // Show feedback
+    const feedbackEl = document.getElementById('quiz-feedback');
+    const resultArea = document.getElementById('quiz-result-area');
+    const nextBtn = document.getElementById('btn-next-question');
+
+    if (feedbackEl) {
+        feedbackEl.textContent = isCorrect ? '✅ Correct!' : `❌ Incorrect. The answer was: ${correct}`;
+        feedbackEl.style.color = isCorrect ? 'var(--success, #4ade80)' : 'var(--error, #f87171)';
+    }
+
+    if (resultArea) {
+        resultArea.classList.remove('hidden');
+    }
+
+    // Update button text for last question
+    if (nextBtn && quizState.currentIndex === quizState.questions.length - 1) {
+        nextBtn.textContent = 'Finish Quiz';
+    }
+}
+
+function nextQuestion() {
+    if (quizState.currentIndex < quizState.questions.length - 1) {
+        quizState.currentIndex++;
+        displayQuizQuestion();
+    } else {
+        // Quiz finished
+        showQuizResults();
+    }
+}
+
+function showQuizResults() {
+    const percentage = Math.round((quizState.score / quizState.questions.length) * 100);
+    alert(`Quiz Complete!\n\nScore: ${quizState.score}/${quizState.questions.length} (${percentage}%)`);
+    quitQuiz();
+}
+
+function quitQuiz() {
+    const configContainer = document.getElementById('quiz-config');
+    const gameContainer = document.getElementById('quiz-game');
+
+    if (configContainer) configContainer.classList.remove('hidden');
+    if (gameContainer) gameContainer.classList.add('hidden');
+
+    // Reset quiz state
+    quizState = {
+        questions: [],
+        currentIndex: 0,
+        score: 0,
+        selectedAnswer: null
+    };
+}
+
+
+let flashcardState = {
+    cards: [],
+    currentIndex: 0
+};
 
 async function generateFlash(fileId) {
     if (!state.token) return openAuthModal();
 
     try {
         const count = 5;
+
+        // Show loading state
+        const btn = event?.target;
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="ph ph-spinner"></i> Generating...';
+        }
+
         const res = await fetch(`${API_URL}/api/flashcards`, {
             method: "POST",
             headers: {
@@ -617,22 +871,149 @@ async function generateFlash(fileId) {
             return;
         }
 
-        const flashcards = await res.json();
-        console.log("Flashcards generated:", flashcards);
-        alert(`Flashcards generated with ${flashcards.length} cards!`);
-        // TODO: Display flashcard UI
+        const data = await res.json();
+
+        // Check for truncation warning
+        if (data.truncated) {
+            const percentUsed = ((data.used_chars / data.total_chars) * 100).toFixed(0);
+            alert(
+                `⚠️ Content Truncation Notice\n\n` +
+                `Your document has ${data.total_chars.toLocaleString()} characters, but only the first ${data.used_chars.toLocaleString()} characters (${percentUsed}%) were used to generate these flashcards.\n\n` +
+                `For better coverage, consider splitting large documents into smaller sections.`
+            );
+        }
+
+        // Initialize flashcard state with flashcards array
+        flashcardState = {
+            cards: data.flashcards || data,  // Support both old and new format
+            currentIndex: 0
+        };
+
+        // Navigate to flashcards view and start
+        navigateTo('flashcards');
+        startFlashcardUI();
 
     } catch (err) {
         console.error(err);
         alert("Error generating flashcards");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="ph ph-cards"></i>';
+        }
     }
+}
+
+function startFlashcardUI() {
+    const configContainer = document.getElementById('flashcard-config');
+    const gameContainer = document.getElementById('flash-game');
+
+    if (configContainer) configContainer.classList.add('hidden');
+    if (gameContainer) {
+        gameContainer.classList.remove('hidden');
+        displayFlashcard();
+
+        // Add event listeners for flashcard controls
+        const quitBtn = document.getElementById('btn-quit-flash');
+        const prevBtn = document.getElementById('btn-prev-card');
+        const nextBtn = document.getElementById('btn-next-card');
+        const cardEl = document.getElementById('active-flashcard');
+
+        if (quitBtn) {
+            quitBtn.onclick = quitFlashcards;
+        }
+        if (prevBtn) {
+            prevBtn.onclick = () => navigateFlashcard(-1);
+        }
+        if (nextBtn) {
+            nextBtn.onclick = () => navigateFlashcard(1);
+        }
+        if (cardEl) {
+            cardEl.onclick = flipFlashcard;
+        }
+    }
+}
+
+function displayFlashcard() {
+    const card = flashcardState.cards[flashcardState.currentIndex];
+    const progressEl = document.getElementById('flash-progress');
+    const frontEl = document.getElementById('flash-front-text');
+    const backEl = document.getElementById('flash-back-text');
+    const cardEl = document.getElementById('active-flashcard');
+
+    if (!card) return;
+
+    // Update progress
+    if (progressEl) {
+        progressEl.textContent = `Card ${flashcardState.currentIndex + 1}/${flashcardState.cards.length}`;
+    }
+
+    // Update card content
+    if (frontEl) frontEl.textContent = card.front;
+    if (backEl) backEl.textContent = card.back;
+
+    // Reset flip state
+    if (cardEl) {
+        cardEl.classList.remove('flipped');
+    }
+
+    // Update navigation buttons
+    const prevBtn = document.getElementById('btn-prev-card');
+    const nextBtn = document.getElementById('btn-next-card');
+
+    if (prevBtn) {
+        prevBtn.disabled = flashcardState.currentIndex === 0;
+    }
+    if (nextBtn) {
+        nextBtn.disabled = flashcardState.currentIndex === flashcardState.cards.length - 1;
+    }
+}
+
+function flipFlashcard() {
+    const cardEl = document.getElementById('active-flashcard');
+    if (cardEl) {
+        cardEl.classList.toggle('flipped');
+    }
+}
+
+function navigateFlashcard(direction) {
+    const newIndex = flashcardState.currentIndex + direction;
+
+    if (newIndex >= 0 && newIndex < flashcardState.cards.length) {
+        flashcardState.currentIndex = newIndex;
+        displayFlashcard();
+    }
+}
+
+function quitFlashcards() {
+    const configContainer = document.getElementById('flashcard-config');
+    const gameContainer = document.getElementById('flash-game');
+
+    if (configContainer) configContainer.classList.remove('hidden');
+    if (gameContainer) gameContainer.classList.add('hidden');
+
+    // Reset flashcard state
+    flashcardState = {
+        cards: [],
+        currentIndex: 0
+    };
 }
 
 // --- File Deletion ---
 async function deleteFile(fileId) {
     if (!confirm("Delete this file?")) return;
 
+    // Find the delete button that was clicked
+    const deleteBtn = event?.target?.closest('button');
+    const originalHTML = deleteBtn?.innerHTML;
+
     try {
+        // Show loading state
+        if (deleteBtn) {
+            deleteBtn.disabled = true;
+            deleteBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i>';
+        }
+
         const res = await fetch(`${API_URL}/api/files/${fileId}`, {
             method: "DELETE",
             headers: getAuthHeaders()
@@ -648,6 +1029,12 @@ async function deleteFile(fileId) {
     } catch (err) {
         console.error(err);
         alert("Error deleting file");
+    } finally {
+        // Restore button state
+        if (deleteBtn) {
+            deleteBtn.disabled = false;
+            deleteBtn.innerHTML = originalHTML;
+        }
     }
 }
 
