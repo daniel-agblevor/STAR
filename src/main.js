@@ -210,7 +210,7 @@ async function loadFiles() {
     if (!state.user) return;
 
     try {
-        const res = await fetch(`${API_URL}/api/files?user_id=${state.user.id}`, {
+        const res = await fetch(`${API_URL}/api/files`, {
             headers: getAuthHeaders()
         });
         if (res.ok) {
@@ -235,7 +235,7 @@ async function uploadFile(file) {
     btn.disabled = true;
 
     try {
-        const res = await fetch(`${API_URL}/api/upload`, {
+        const res = await fetch(`${API_URL}/api/files/upload`, {
             method: "POST",
             headers: getAuthHeaders(),
             body: formData
@@ -999,55 +999,15 @@ function quitFlashcards() {
     };
 }
 
-// --- File Deletion ---
-async function deleteFile(fileId) {
-    if (!confirm("Delete this file?")) return;
-
-    // Find the delete button that was clicked
-    const deleteBtn = event?.target?.closest('button');
-    const originalHTML = deleteBtn?.innerHTML;
-
-    try {
-        // Show loading state
-        if (deleteBtn) {
-            deleteBtn.disabled = true;
-            deleteBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i>';
-        }
-
-        const res = await fetch(`${API_URL}/api/files/${fileId}`, {
-            method: "DELETE",
-            headers: getAuthHeaders()
-        });
-
-        if (res.ok) {
-            await loadFiles();
-            alert("File deleted successfully");
-        } else {
-            const data = await res.json();
-            alert("Error: " + (data.error || "Failed to delete file"));
-        }
-    } catch (err) {
-        console.error(err);
-        alert("Error deleting file");
-    } finally {
-        // Restore button state
-        if (deleteBtn) {
-            deleteBtn.disabled = false;
-            deleteBtn.innerHTML = originalHTML;
-        }
-    }
-}
-
 // --- Initialization ---
-async function init() {
+function init() {
     applyTheme(state.theme);
     setupEventListeners();
     updateAuthUI();
-    if (state.user) {
-        await loadFiles();
-        await loadChatHistory();
-    }
+    loadFiles(); // Will only run if logged in
+    loadChatHistory();
+    navigateTo('dashboard');
 }
 
-// Run
-init();
+// Wait for the DOM to be ready, then initialize the app
+document.addEventListener('DOMContentLoaded', init);
