@@ -1,14 +1,10 @@
 // Environment-aware API URL configuration
 const API_URL = (() => {
-    // Check for explicit override (for development with custom backend)
-    if (window.VITE_API_URL) return window.VITE_API_URL;
-
-    // Production: use same origin (assumes frontend and backend on same domain)
+    // For production, assume the API is at the same origin
     if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
         return window.location.origin;
     }
-
-    // Development: default to localhost:8000
+    // For development, use the local backend server
     return 'http://127.0.0.1:8000';
 })();
 
@@ -102,7 +98,7 @@ async function login(email, password) {
 
         const data = await res.json();
 
-        if (!res.ok) throw new Error(data.error || "Login failed");
+        if (!res.ok) throw new Error(data.error || `HTTP error! status: ${res.status}`);
 
         // Save Session
         state.token = data.token;
@@ -145,7 +141,7 @@ async function register(email, password, name) {
 
         const data = await res.json();
 
-        if (!res.ok) throw new Error(data.error || "Registration failed");
+        if (!res.ok) throw new Error(data.error || `HTTP error! status: ${res.status}`);
 
         alert("Registration successful! Please login.");
         toggleAuthMode(); // Switch to login form
@@ -245,11 +241,12 @@ async function uploadFile(file) {
             await loadFiles();
         } else {
             const data = await res.json();
-            alert("Upload failed: " + (data.error || res.statusText));
+            const errorMessage = data.error || `HTTP error! status: ${res.status}`;
+            alert(`Upload failed: ${errorMessage}`);
         }
     } catch (err) {
         console.error(err);
-        alert("Error uploading file");
+        alert("Error uploading file: " + err.message);
     } finally {
         btn.innerText = originalText;
         btn.disabled = false;
