@@ -1,4 +1,4 @@
-const API_URL = `http://${window.location.hostname}:8000`;
+const API_URL = 'http://127.0.0.1:8000';
 
 // State
 const state = {
@@ -45,16 +45,6 @@ const dom = {
     // Stats
     statFiles: document.getElementById("stat-files-count")
 };
-
-// --- Initialization ---
-async function init() {
-    applyTheme(state.theme);
-    setupEventListeners();
-    updateAuthUI();
-    if (state.user) {
-        await loadFiles();
-    }
-}
 
 // --- Auth Functions ---
 async function login(email, password) {
@@ -418,12 +408,12 @@ function toggleAuthMode() {
 }
 
 function toggleMobileMenu() {
-    dom.sidebar.classList.toggle("active");
+    dom.sidebar.classList.toggle("open");
     dom.sidebarOverlay.classList.toggle("active");
 }
 
 function closeMobileMenu() {
-    dom.sidebar.classList.remove("active");
+    dom.sidebar.classList.remove("open");
     dom.sidebarOverlay.classList.remove("active");
 }
 
@@ -547,6 +537,129 @@ function getFlashcardsViewHTML() {
           </div>
         </div>
     `;
+}
+
+// --- Chat History ---
+async function loadChatHistory() {
+    if (!state.token) return;
+
+    try {
+        const res = await fetch(`${API_URL}/api/chat/history`, {
+            headers: getAuthHeaders()
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            // Clear existing messages except the initial bot message
+            const initialMsg = dom.chatMessages.querySelector('.message.bot');
+            dom.chatMessages.innerHTML = '';
+            if (initialMsg) dom.chatMessages.appendChild(initialMsg);
+
+            // Add history messages
+            data.messages.forEach(msg => {
+                addMessage(msg.content, msg.role === 'user' ? 'user' : 'bot');
+            });
+        }
+    } catch (err) {
+        console.error("Error loading chat history:", err);
+    }
+}
+
+// --- Quiz & Flashcard Generation ---
+async function generateQuiz(fileId) {
+    if (!state.token) return openAuthModal();
+
+    try {
+        const count = 5;
+        const res = await fetch(`${API_URL}/api/quiz`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                ...getAuthHeaders()
+            },
+            body: JSON.stringify({ file_id: fileId, count })
+        });
+
+        if (!res.ok) {
+            const data = await res.json();
+            alert("Error: " + (data.error || "Failed to generate quiz"));
+            return;
+        }
+
+        const questions = await res.json();
+        console.log("Quiz generated:", questions);
+        alert(`Quiz generated with ${questions.length} questions!`);
+        // TODO: Display quiz UI
+
+    } catch (err) {
+        console.error(err);
+        alert("Error generating quiz");
+    }
+}
+
+async function generateFlash(fileId) {
+    if (!state.token) return openAuthModal();
+
+    try {
+        const count = 5;
+        const res = await fetch(`${API_URL}/api/flashcards`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                ...getAuthHeaders()
+            },
+            body: JSON.stringify({ file_id: fileId, count })
+        });
+
+        if (!res.ok) {
+            const data = await res.json();
+            alert("Error: " + (data.error || "Failed to generate flashcards"));
+            return;
+        }
+
+        const flashcards = await res.json();
+        console.log("Flashcards generated:", flashcards);
+        alert(`Flashcards generated with ${flashcards.length} cards!`);
+        // TODO: Display flashcard UI
+
+    } catch (err) {
+        console.error(err);
+        alert("Error generating flashcards");
+    }
+}
+
+// --- File Deletion ---
+async function deleteFile(fileId) {
+    if (!confirm("Delete this file?")) return;
+
+    try {
+        const res = await fetch(`${API_URL}/api/files/${fileId}`, {
+            method: "DELETE",
+            headers: getAuthHeaders()
+        });
+
+        if (res.ok) {
+            await loadFiles();
+            alert("File deleted successfully");
+        } else {
+            const data = await res.json();
+            alert("Error: " + (data.error || "Failed to delete file"));
+        }
+    } catch (err) {
+        console.error(err);
+        alert("Error deleting file");
+    }
+}
+
+// --- Initialization ---
+async function init() {
+    applyTheme(state.theme);
+    setupEventListeners();
+    updateAuthUI();
+    if (state.user) {
+        await loadFiles();
+        await loadChatHistory();
+    }
 }
 
 // Run
