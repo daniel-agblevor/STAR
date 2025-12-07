@@ -16,6 +16,11 @@ const dom = {
     pageTitle: document.getElementById("page-title"),
     userProfile: document.querySelector(".user-profile-sidebar"),
 
+    // Mobile Menu
+    hamburgerBtn: document.getElementById("btn-hamburger"),
+    sidebar: document.querySelector(".sidebar"),
+    sidebarOverlay: document.getElementById("sidebar-overlay"),
+
     // Auth Modals
     authModal: document.getElementById("auth-modal"),
     closeAuthBtn: document.getElementById("close-auth-modal"),
@@ -238,14 +243,20 @@ async function sendChat() {
     }
 }
 
+
 function addMessage(text, sender) {
     const div = document.createElement("div");
     div.className = `message ${sender}`;
-    div.innerHTML = sender === 'user' ? text : marked.parse(text);
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.innerHTML = sender === 'user' ? text : marked.parse(text);
+
+    div.appendChild(bubble);
     dom.chatMessages.appendChild(div);
     if (dom.chatMessages.children.length > 20) dom.chatMessages.firstChild.remove();
     dom.chatMessages.scrollTop = dom.chatMessages.scrollHeight;
-    return div;
+    return bubble;
 }
 
 // --- Event Listeners ---
@@ -255,7 +266,10 @@ function setupEventListeners() {
 
     // Nav
     dom.navItems.forEach(item => {
-        item.addEventListener("click", () => navigateTo(item.dataset.target));
+        item.addEventListener("click", () => {
+            navigateTo(item.dataset.target);
+            closeMobileMenu(); // Close mobile menu when navigating
+        });
     });
 
     // Theme
@@ -313,6 +327,14 @@ function setupEventListeners() {
     dom.chatInput.addEventListener("keypress", (e) => {
         if (e.key === "Enter") sendChat();
     });
+
+    // Mobile Menu
+    if (dom.hamburgerBtn) {
+        dom.hamburgerBtn.addEventListener("click", toggleMobileMenu);
+    }
+    if (dom.sidebarOverlay) {
+        dom.sidebarOverlay.addEventListener("click", closeMobileMenu);
+    }
 }
 
 function navigateTo(targetId) {
@@ -346,8 +368,11 @@ function navigateTo(targetId) {
                 targetView.innerHTML = getFilesViewHTML();
                 refreshDomForFiles();
                 renderFiles();
+            } else if (targetId === 'quiz') {
+                targetView.innerHTML = getQuizViewHTML();
+            } else if (targetId === 'flashcards') {
+                targetView.innerHTML = getFlashcardsViewHTML();
             }
-            // For Quiz/Flashcards, reloading via F5 is best fallback if specific restore logic isn't built.
         }
     }
 
@@ -392,6 +417,17 @@ function toggleAuthMode() {
     dom.registerContainer.classList.toggle("hidden");
 }
 
+function toggleMobileMenu() {
+    dom.sidebar.classList.toggle("active");
+    dom.sidebarOverlay.classList.toggle("active");
+}
+
+function closeMobileMenu() {
+    dom.sidebar.classList.remove("active");
+    dom.sidebarOverlay.classList.remove("active");
+}
+
+
 function renderFiles() {
     dom.fileListContainer.innerHTML = "";
     state.files.forEach(file => {
@@ -424,6 +460,93 @@ function getDashboardHTML() {
 
 function getFilesViewHTML() {
     return `<div class="upload-area" id="drop-zone"><i class="ph ph-upload-simple"></i><p>Drag & Drop PDF or DOCX here</p><button class="btn primary" id="upload-btn">Browse Files</button><input type="file" id="file-input" hidden accept=".pdf,.docx,.doc,.txt" /></div><div class="file-list" id="file-list-container"></div>`;
+}
+
+function getQuizViewHTML() {
+    return `
+        <!-- Quiz Config -->
+        <div class="config-container" id="quiz-config">
+          <div class="card-glass">
+            <h3>Generate Quiz</h3>
+            <div class="form-group">
+              <label>Select Document</label>
+              <select id="quiz-file-select" class="glass-input">
+                <option>Loading...</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Number of Questions: <span id="quiz-count-val">5</span></label>
+              <input type="range" id="quiz-count" min="3" max="10" value="5" class="glass-range">
+            </div>
+            <button class="btn primary full-width" id="btn-start-quiz">Generate Quiz</button>
+          </div>
+        </div>
+
+        <!-- Quiz Gameplay (Hidden by default) -->
+        <div class="quiz-game-container hidden" id="quiz-game">
+          <div class="quiz-header">
+            <span id="quiz-progress">Question 1/5</span>
+            <button class="btn-text" id="btn-quit-quiz">Exit</button>
+          </div>
+          <div class="question-card">
+            <h2 id="quiz-question-text">Question goes here?</h2>
+            <div class="options-grid" id="quiz-options">
+              <!-- Options injected here -->
+            </div>
+          </div>
+          <div class="quiz-footer hidden" id="quiz-result-area">
+            <p id="quiz-feedback"></p>
+            <button class="btn primary" id="btn-next-question">Next Question</button>
+          </div>
+        </div>
+    `;
+}
+
+function getFlashcardsViewHTML() {
+    return `
+        <!-- Flashcard Config -->
+        <div class="config-container" id="flashcard-config">
+          <div class="card-glass">
+            <h3>Generate Flashcards</h3>
+            <div class="form-group">
+              <label>Select Document</label>
+              <select id="flash-file-select" class="glass-input">
+                <option>Loading...</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Count: <span id="flash-count-val">5</span></label>
+              <input type="range" id="flash-count" min="3" max="10" value="5" class="glass-range">
+            </div>
+            <button class="btn primary full-width" id="btn-start-flash">Generate Cards</button>
+          </div>
+        </div>
+
+        <!-- Flashcard Gameplay -->
+        <div class="flashcard-game-container hidden" id="flash-game">
+          <div class="flash-header">
+            <span id="flash-progress">Card 1/5</span>
+            <button class="btn-text" id="btn-quit-flash">Exit</button>
+          </div>
+
+          <div class="flashcard-scene">
+            <div class="flashcard" id="active-flashcard">
+              <div class="card-face card-front">
+                <p id="flash-front-text">Front</p>
+                <span class="hint">Click to flip</span>
+              </div>
+              <div class="card-face card-back">
+                <p id="flash-back-text">Back</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="flash-controls">
+            <button class="btn-circle" id="btn-prev-card"><i class="ph ph-arrow-left"></i></button>
+            <button class="btn-circle" id="btn-next-card"><i class="ph ph-arrow-right"></i></button>
+          </div>
+        </div>
+    `;
 }
 
 // Run
